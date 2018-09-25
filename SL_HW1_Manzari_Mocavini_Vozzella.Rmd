@@ -1,0 +1,810 @@
+---
+title: "StatLearn / Homework 01"
+author: "Manzari Matteo - 1660582, Mocavini Daniele - 1475062, Vozzella Sara - 1666172"
+output:
+  html_document:
+    code_folding: show
+    toc: true
+    toc_depth: 3 
+    toc_float: true
+    number_sections: false
+    highlight: tango
+---
+
+# Library
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(ggmap)
+library(MASS)
+library(ggplot2)
+library(sparr)
+library(plotly)
+library(ks)
+library(LPCM)
+library(meanShiftR)
+library(pracma)
+library(dbscan)
+library(MeanShift)
+library(kedd)
+```
+&nbsp;
+
+# Run among the density...
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+***
+<center> ![](http://www.glendalecacoalition.org/wp-content/uploads/2013/11/run-for-health.jpg){ width=50% } </center>
+***
+We analyzed the personal data coming from tracking devices of our [Master](http://www.dss.uniroma1.it/it/system/files/Docenti/Foto/brutti.jpg).
+Precisely we have a dataset that collects the gps information of 60 running session.
+
+First of all, our focus on estimate and visualize properly and meaningfully the density of this data, considering just the information about longitude and latitude.
+The Kernel Density Estimation is a foundamental data smoothing problem which the inferences about the data are based on a finite data sample.
+
+The aim of next step is to figure out a meaningful cluster of the places in which he runs most, through the Mean-Shift algorithm.
+
+
+#Part I
+## Preparation of dataset
+&nbsp;
+
+```{r message=FALSE, warning=FALSE}
+load("trackme.RData")
+```
+
+```{r}
+datadata <- data.frame(runtrack$lon,runtrack$lat)
+data<- as.matrix(datadata)
+x<- runtrack$lon
+y<- runtrack$lat
+myLocation <- c(min(runtrack$lon, na.rm = T),
+min(runtrack$lat, na.rm = T),
+max(runtrack$lon, na.rm = T),
+max(runtrack$lat, na.rm = T))
+```
+
+In the following plot we can see a 2D rapresentation of our [semper laudati](http://www.partecipiamo.it/angela_magnoni/san_francesco/preghiere_a_san_francesco/laudato....png) Master's position over Rome
+
+&nbsp;
+
+```{r MyMapInD, message=FALSE, warning=FALSE}
+# Get the map from Google (default)
+myMapInD <- get_map(location = myLocation, maptype = "roadmap", zoom = 13)
+# Plot gps coordinates (without elevation data)
+gp <- ggmap(myMapInD) + geom_point(data = runtrack,
+aes(x = lon, y = lat),
+size = .5, colour = I("red"), alpha = .01)
+# Take a look
+print(gp + ggtitle('Where our Master runs?'))
+
+```
+
+## Let's start the true analysis.
+&nbsp;
+
+To *estimate* and *visualize* properly and meaningfully the density of this data we will use the _**Non-parametric density estimation**_. 
+
+To be more specific:
+we have the data $$\Bigr\{X_1,...,X_n\Bigr\} \overset{i.i.d}{\sim} p(\cdot)$$ and We are interested in estimating the shape of the function $p(.)$
+
+**An important assumption is that our data are $i.i.d$, that it isn't necessary true, but in this analysis we process this data like i.i.d distributions.**
+
+we have to construct an estimator $\hat{p}(\cdot)$.
+
+we considered this kernel density estimator:
+\[
+\hat{p_h}(x) = \frac{1}{n}\sum_{n=1}^{n}\frac{1}{h^d}\cdot K\biggl(\frac{\big\|x - X_i\big\|}{h}\biggl)
+\]
+
+The estimator depends on a smoothing parameter *$h$* called *bandwidth* and... 
+\[
+\text{ ..Choosing it in a properly way is crucial!}
+\]
+
+We used several packages to find h, but let see first a little bit of theory!
+
+The bandwidth of the Kernel is a free parameter which exhibits a strong influence on the resulting estimate.
+It is really easy to occur in a situation of *oversmoothed* or *undersmoothed*:
+
+- in the first case, we choose a value of $h$ too small, and the density is not useful beacuse we achieved a lot of modes
+
+- in the second case, we choose a value of $h$ too big, so we obscure much of the underlying structure
+
+The most common optimally criterion used to select this parameter is the **risk Function**:
+\[
+R(h^*)\asymp\Bigl(\frac{1}{n}\Bigl)^{\frac{2\beta}{2\beta+d}}
+\]
+where $\beta$ represents the order of the derivative and $d$ the dimesion of dataset. 
+If we assigned $\beta=1$, the result is the histogram rate, but if $\beta > 1$ the $R(h^*)$ go to zero faster than histogram rate, for this reason it is better!
+
+
+
+
+And now let's see the several packages:
+
+&nbsp;
+
+## Part 1.1: Find the *optimal* $h$
+
+&nbsp;
+
+The main factor in the derivative kernel density estimation is the choice of $h$ (bandwidth) for each singular dimension of the dataset. It is important because its role is to control the direction and the amount of smoothing.
+
+### First examination: Smoothed cross-validation (SCV) bandwidth selector
+
+
+
+In the first test we use a *'ks'* package, in specific the *Hscv* function. The request in input is just the vector or matrix of the data value and it returns the Function Value for each iteration (for both dimension Lat and Lon), until the Relative gradient goes close to zero, in that case the iteration is probably a solution.
+```{r CSV}
+# Smoothed cross-validation (SCV) bandwidth selector
+Hscv <- Hscv(x=datadata)
+# You should add verbose=T to see the iterations
+# Hscv <- Hscv(x=datadata, verbose=T)
+h_Hscv <- c(0.0004048887,0.001224336)
+
+```
+
+The results are:
+Function Value
+
+- $h^*_{x_{Hscv}} =0.0004048887$
+- $h^*_{y_{Hscv}}= 0.0012243360$
+
+&nbsp;
+
+### Second examination: Bandwidth for density via Normal Reference Distribution
+
+In *'MASS'* package we use the *bandwidth.nrd* function.Also in that case, the request in input is just the data vector and it returns a bandwidth on a scale suitable for the width argument of density for of a Gaussian kernel density estimator.
+
+```{r Bandwidth.nrd}
+# Bandwidth for density() via Normal Reference Distribution
+h_bandwidth=c(bandwidth.nrd(x),bandwidth.nrd(y))
+```
+
+The results are:
+Function Value
+
+- $h^*_{x_{Bandwidth}} =0.01027$
+- $h^*_{y_{Bandwidth}}= 0.00245$
+
+&nbsp;
+
+### Third examination: Normal scale bandwidth
+
+Finally, we try to use another function of package *'ks'*, that requests also the grade of derivative of each dimension.
+
+```{r hns}
+# Normal scale bandwidth
+h_hns <- c(hns(x,deriv.order=1),hns(y,deriv.order=1))
+```
+
+The results are:
+Function Value
+
+- $h^*_{x_{hns}} =0.00438$
+- $h^*_{y_{hns}}= 0.00104$
+
+&nbsp;
+
+### Estimate..
+
+We have now 3 different candidates for the bandwidth value, let's try to estimate the density.
+There are two main functions called *kde* and *kde2*, respectively in the packages *'ks'* and *MASS*, which estimate the kernel density requiring the $h$ value.
+We choosed to use the second one because it is more specific for the two dimension problem and furthermore because it uses a more functional bivariate normal kernel, for this reason, we obtain a better graphical result.
+
+```{r Kde2d*3}
+kd0 <- kde2d(x, y, h_Hscv)
+kd1 <- kde2d(x, y, h_bandwidth)
+kd2 <- kde2d(x, y, h_hns)
+```
+&nbsp;
+
+### Visualize..
+
+Thank's to 'graphics' packages we can have a simple and light plot for this 3D Density Estimated
+
+```{r echo=FALSE, fig.height=5, fig.width=13}
+par(mfrow=c(1,3))
+
+#kd0
+persp(kd0, main='Smoothed cross-validation \n bandwidth selector',
+      sub='h= .0004 , .0012',
+      theta = 24, phi = 20, 
+      expand = 0.8,ltheta = -120, 
+      shade = 0.2, col = heat.colors(500, alpha = 0.8),
+      axes = F)
+#kd1
+persp(kd1, main='Bandwidth via Normal \n Reference Distribution',
+      sub='h= .0102 , .0024',
+      theta = 24, phi = 20, 
+      expand = 0.8,ltheta = -120, 
+      shade = 0.2, col = heat.colors(500, alpha = 0.8),
+      axes = F)
+#kd2
+persp(kd2, main=' Normal scale bandwidth',
+      sub='h= .0043 , .0010',
+      theta = 24, phi = 20, 
+      expand = 0.8,ltheta = -120, 
+      shade = 0.2, col = heat.colors(500, alpha = 0.8),
+      axes = F)
+
+par(mfrow=c(1,1))
+```
+
+
+### And finally choose $h$!
+
+Examining the achieved graphs, we select the $h$ value via Normal Reference Distribution.
+Our goal is to find a graph that is characterized by a _smoothed enough_ density.
+As mentioned above, the two main problems that we can verify are the *oversmoothed* and *undersmoothed* density. We were focused on a graphical analysis, that's why our judgment is that the *winner $h$* is :
+\[
+h^*_{x_{Bandwidth}} =0.01027\\  h^*_{y_{Bandwidth}}= 0.00245
+\]
+
+
+### Focused on the *winner* $h$:
+
+The first graph produces a contour plot with the areas between the contours filled in solid color.
+```{r echo=FALSE}
+contour.mat <- ifelse(kd1$z < 8000, 0, kd1$z)
+filled.contour(kd1, axes = T, main='Bandwidth via Normal Reference Distribution',
+               plot.axes = contour(contour.mat, levels = 1, 
+                                   drawlabels = FALSE, axes = FALSE, 
+                                   frame.plot = FALSE, add = TRUE))
+```
+
+And finally a 3D plot of density.
+```{r echo=FALSE}
+pkd1 <- plot_ly(x = x, y = y, z = kd1$z) %>% add_surface() #setting 3D interactive plot
+pkd1
+```
+&nbsp;
+
+> From now on we use the *winner* $h$ for other kinds of analysis
+
+## Part 1.2: Mean-Shift
+&nbsp;
+
+The second part of our analysis concerns the Clustering. There is a lot of algorithms to do this kind of work, but we use the Mean-Shift algorithm.
+
+Mean Shift is a powerful and versatile non-parametric iterative algorithm that can be used for lot of purposes like finding modes, clustering etc. 
+
+This algorithm considers feature space as an empirical probability density function.
+
+Some necessary assumptions:
+
+- $\Bigr\{X_1,...,X_n\Bigr\} \overset{i.i.d}{\sim} p(\cdot)$
+- let $\hat{p_h}(x) = \frac{1}{n}\sum_{n=1}^{n}\frac{1}{h^d}\cdot K\biggl(\frac{\big\|x - X_i\big\|}{h}\biggl)$ be a Kernel Density Estimation for $p(\cdot)$ (in our case we have found the respective density function in the previous analysis)
+- let $\Bigr\{\hat{m_1},...,\hat{m_k}\Bigr\}$ be the modes of $\hat{p_h(\cdot)}$
+
+
+For each data point, Mean shift associates it with the nearby peak of the dataset's probability density function. For each data point, Mean shift defines a window around it and computes the mean of the data point.  Then it shifts the center of the window to the mean and repeats the algorithm till it converges. 
+
+So for each point $a_j$ , set $a_j^{(0)}= a_j$
+and repeat this iteration $$a_j^{(t+1)}= \frac{\sum_{i=1}^{n}x_i \cdot K\{\frac{1}{h}(a_j^{(t)}-x_i)\}}{\sum_{i=1}^{n} K\{\frac{1}{h}(a_j^{(t)}-x_i)\}}$$ until it converges.
+
+Where the quantity $\frac{K\{\frac{1}{h}(a_j^{(t)}-x_i)\}}{\sum_{i=1}^{n} K\{\frac{1}{h}(a_j^{(t)}-x_i)\}} \in [0,1]$.
+
+Our set of modes $\hat{\mathbb{M}}$ is the unique values of the set $\Bigr\{a_1^{(\infty)},...,a_n^{(\infty)}\Bigr\}$.
+
+
+## Now ours applications!
+
+&nbsp;
+
+We tried several packages to cluster by meanshift,we  finally decided to use the *meanShift* function from the *'meanshiftR'* package because it seems to be the fastest (based on "Fast Library for Approximate Nearest Neighbors (FLANN))" without losing accuracy. (Click  [here](http://meanmean.me/meanshift/r/cran/2016/08/28/meanShiftR.html) for documentation).
+
+```{r}
+mean_clusters<-meanShift(data, nNeighbors = 10000, algorithm = "LINEAR",
+              kernelType = "NORMAL", bandwidth = h_bandwidth, epsilonCluster = 0.0000002)
+```
+&nbsp;
+
+
+```{r Mean-shift PLOT}
+clu1 <- which(mean_clusters$assignment==1)
+clu2 <- which(mean_clusters$assignment==2)
+clu3 <- which(mean_clusters$assignment==3)
+clu4 <- which(mean_clusters$assignment==4)
+
+# Plot gps coordinates with clusters
+ggmap(myMapInD) + geom_point(data = datadata[clu1,],
+                                   aes(x = x[clu1], y = y[clu1]), 
+                                   size = 1, colour = I("green"), alpha = .01) + geom_point(data = datadata[clu2,], aes(x = x[clu2], y = y[clu2]), size = 1, colour = I("blue"), alpha = .01) + geom_point(data = datadata[clu3,], aes(x = x[clu3], y = y[clu3]), size = 1, colour = I("darkorchid1"), alpha = .01) + geom_point(data = datadata[clu4,], aes(x = x[clu4], y = y[clu4]), size = 1, colour = I("gray0"), alpha = .01) + geom_point(data=data.frame(unique(mean_clusters$value)),aes(x =data.frame(unique(mean_clusters$value))[,1] , y = data.frame(unique(mean_clusters$value))[,2]),col="orangered",pch=c(19), size=3)
+```
+
+To obtain these 4 clusters we decided to lower the epsilonCluster (the latter determines the minimum distance between distinct clusters) threshold to the value of 0.0000002, using the default "LINEAR" algorithm and the default "NORMAL" kernelType.
+
+The main four attraction point:
+
+- *Tiburtina station* (The green part)
+- *Villa Torlonia* (The blue part)
+- *Castel Sant'Angelo* (The gray part)
+- *Piazza Venezia* (The pink part)
+
+```{r eval=FALSE, include=TRUE}
+length(clu1)
+length(clu2)
+length(clu3)
+length(clu4)
+```
+
+From the previous analysis, we found that they might exist two predominant clusters, corresponding to the areas of Villa Torlonia and the Tiburtina Station. 
+
+In order to verify it we decided to see the cardinality of these clusters:
+
+- 17544 for the *'Tiburtina Station'* cluster
+- 25765 for the *'Villa Torlonia'* cluster
+- 3774 for the *'Castel Sant'Angelo'* cluster
+- 7832 for the *'Piazza Venezia'* cluster
+
+To verify graphically these meaningful differences between the cardinality of each cluster, we can see from the plot the difference of the color density. The predominant cluster have a higer color density.
+
+## BUT....
+
+Since our [Master](http://www.dss.uniroma1.it/it/system/files/Docenti/Foto/brutti.jpg) is not fast (just for now) like [Eliud Kipchoge](https://en.wikipedia.org/wiki/Eliud_Kipchoge) probably only for the lack of sponsors (true [nike](https://www.nytimes.com/2017/05/06/sports/eliud-kipchoge-marathon-nike-shoes.html) ?),
+we try to reduce the observation of dataset.
+We take each singular observation only if the latter has more than 5 seconds difference from the previous one. In this way we don't lose a lot of information but we reduce the dataset from 54915 obs to 18488 obs (nearly 3 times less!).
+
+In response to this reduction we can use better techniques to estimate the $h$ and the *mean-shift*.
+
+
+
+```{r}
+## Reduce dataset
+
+new_time=runtrack$time[1]
+index=c(1)
+for (i in c(2:length(runtrack[,1]))){
+  if (runtrack$time[i]-new_time>=5){
+    index=append(index, i)
+    new_time=runtrack$time[i]
+  }else{
+    next
+  }
+}
+data_ridimensionata=runtrack[index,]
+data_ridotta <- data.frame(data_ridimensionata$lon,data_ridimensionata$lat)
+data_ridotta<- as.matrix(data_ridotta)
+```
+
+### Finding the "True" Optimal $h$
+
+We use the package *kde*, in particular *h.amise* function, to evaluate the asymptotic mean integrated squared error (AMISE) for optimal smoothing parameters h of the derivative of kernel density estimator one-dimensional.
+
+```{r eval=FALSE, include=TRUE}
+amise_lon <- h.amise(data_ridimensionata$lon, kernel ="epanechnikov")
+#0.01555765
+amise_lat<- h.amise(data_ridimensionata$lat, kernel ="epanechnikov")
+#0.00376122
+```
+
+This procedure requires a large amount of available ram (12-14 Gb), for this reason we decide to show the code but not execute it. 
+Here we report the results:
+- $h^*_{x_{amise}} =0.01556$
+- $h^*_{y_{amise}}= 0.00376$
+
+```{r}
+h_amise <- c(0.01555765,0.00376122)
+```
+
+### Estimate and visualize our *new* Kernel Destity Estimator
+
+```{r}
+kd4 <- kde2d(data_ridimensionata$lon,data_ridimensionata$lat, h_amise)
+```
+
+```{r}
+persp(kd4, main='Bandwidth via AMISE',
+      sub='h= .01556 , .00376',
+      theta = 24, phi = 20, 
+      expand = 0.8,ltheta = -120, 
+      shade = 0.2, col = heat.colors(500, alpha = 0.8),
+      axes = F)
+```
+
+```{r echo=FALSE}
+contour.mat <- ifelse(kd1$z < 8000, 0, kd1$z)
+filled.contour(kd1, axes = T, main='Bandwidth via AMISE',
+               plot.axes = contour(contour.mat, levels = 1, 
+                                   drawlabels = FALSE, axes = FALSE, 
+                                   frame.plot = FALSE, add = TRUE))
+```
+
+This new value of $h$, it shows us a more meaningful graphic beacuse in its peripheral part the density is less jagged than the previous examination, but it mantains the *highest* modal peaks.
+
+
+### Mean Shift clustering
+
+```{r}
+mean_clusters <- meanShift(data_ridotta,kernelType = "EPANECHNIKOV", bandwidth = h_amise,
+                 iterations = 10,
+                 epsilon = 1e-08, epsilonCluster = 0.0000002)
+```
+
+
+
+
+
+```{r}
+clu1 <- which(mean_clusters$assignment==1)
+clu2 <- which(mean_clusters$assignment==2)
+clu3 <- which(mean_clusters$assignment==3)
+clu4 <- which(mean_clusters$assignment==4)
+```
+
+
+
+
+```{r}
+# Plot gps coordinates with clusters
+ggmap(myMapInD) + geom_point(data = datadata[clu1,],
+                             aes(x = data_ridimensionata$lon[clu1], y = data_ridimensionata$lat[clu1]), 
+                             size = 3, colour = I("green"), alpha = .01) + geom_point(data = datadata[clu2,], aes(x = data_ridimensionata$lon[clu2], y = data_ridimensionata$lat[clu2]), size = 3, colour = I("blue"), alpha = .01) + geom_point(data = datadata[clu3,], aes(x = data_ridimensionata$lon[clu3], y = data_ridimensionata$lat[clu3]), size = 3, colour = I("darkorchid1"), alpha = .01) + geom_point(data = datadata[clu4,], aes(x = data_ridimensionata$lon[clu4], y =data_ridimensionata$lat[clu4]), size = 3, colour = I("gray0"), alpha = .01) + geom_point(data=data.frame(unique(mean_clusters$value)),aes(x =data.frame(unique(mean_clusters$value))[,1] , y =data.frame(unique(mean_clusters$value))[,2]),col="orangered",pch=c(19), size=4)
+```
+
+
+Using this *new* bandwidth, we have chosen *'Epanechnikov* as kernel type because it is the theoretically optimal kernel being justified to use it because also the $h$ has been computed with this type of kernel. 
+The position of the modal points remained similar except for point 4 that moved from Piazza Venezia to the north. Another difference is in the cardinality of the clusters: from this analysis we achieved three the predominant clusters. Indeed the cardinality of the blue and green cluster has decreased in favor of the pink cluster.
+
+
+```{r eval=FALSE, include=TRUE}
+length(clu1)
+length(clu2)
+length(clu3)
+length(clu4)
+```
+
+Here the cardinality of clusters:
+
+- 5740 for the *Tiburtina Station* cluster
+- 5481 for the *Villa Torlonia* cluster 
+- 4832 for the *Castel Sant'Angelo* cluster
+- 2435 for the $4^{th}$ cluster
+
+Later our analysis, we decide that the best result is the first way to clustering.
+The latter represents two main clusters (*Tiburtina Station* and *Villa Torlonia*)
+which correspond to the principal peak of the density estimated. 
+Furthermore is important remember that the data analyzed isn't really independent, probably this is why our analysis miss just a little bit of precision.
+
+## Histogram
+
+The last method that we want to use to estimate our density is the first method that we see in class... the Histogram!
+
+
+```{r}
+hist <- histde(data_ridotta, binw= h_amise)
+plot(hist,  main='Density estimation', sub='h: .01556 , .00376', xlab='Longitude', ylab='Latitude', add.grid=F, border='white', nbreaks=40, drawpoints=F)
+box()
+```
+
+
+Also using this method we can note that our peaks points are situated in the Nord-East sector of our density builded using the reduced dataset.
+
+
+
+# Part II 
+In this part we will consider each single individual points: every one of them is a curve in $R^2$. Indeed, this dataset is a sample of 60 running.
+
+First of all, we have to find a density estimator $\hat q_\epsilon(\gamma)$. 
+
+To empirically find $\hat q_\epsilon(\gamma)$ we proceed following this procedure: 
+
+-  Build a **matrix  of distances** (60x60) using the Hausdorff metric to measure distances beetwen curves.
+- For each curve $G_i$ we have to find $\hat q_\epsilon(G_i)$ using an unnormalized boxcar kernel:
+  $\hat q_\epsilon(G_i)= \frac{1}{60} \sum_{j=1}^{60} I(dist_H(G_i,G_j)\le \epsilon)$        
+
+Ok, let's start!
+
+```{r }
+datadata <- data.frame(runtrack$lon,runtrack$lat, runtrack$id)
+create_kde <- function(matrix_dist_haus,epsilon)
+{
+  len <- length(matrix_dist_haus[,1])
+  kde<- rep(NA,len)
+  for (i in 1:len)
+  {
+    out<-0 
+    for (j in 1:len)
+    {
+      if (matrix_dist_haus[i,j] <= epsilon)
+      {
+        out <- out+1
+      }
+      
+    }
+    kde[i]<- (1/len)*out
+  }
+  return(kde)
+}
+```
+
+```{r kde, ecdf, }
+id=names(table(datadata$runtrack.id))
+
+
+### create matrix_run & matrix_dist_haus ###
+idx=1
+distance_distr<- NULL # used for quantile function
+matrix_run <-NULL
+matrix_dist_haus=matrix(NA, nrow=60, ncol=60)
+for (i in id)
+{
+  temp <- cbind(runtrack$lon[runtrack$id==i],runtrack$lat[runtrack$id==i])
+  matrix_run[[idx]] <- temp
+  idx <- idx+1
+  xxxx<-length(matrix_run)
+  if ( xxxx == 2)
+  {
+    temp <-hausdorff_dist(matrix_run[[xxxx]],matrix_run[[xxxx-1]])
+    distance_distr<- append(x<-distance_distr,values<-c(temp,temp))
+    matrix_dist_haus[xxxx,xxxx-1]<-temp
+    matrix_dist_haus[xxxx-1,xxxx]<-temp
+    matrix_dist_haus[1,1]<-0
+    matrix_dist_haus[2,2]<-0
+  } 
+  if (xxxx > 2)
+  {
+    for (kk in 1:(xxxx))
+    {
+      if (kk==xxxx)
+      {
+        matrix_dist_haus[xxxx,xxxx]<-0
+        matrix_dist_haus[xxxx,xxxx]<-0
+      }
+      else
+      {
+        temp1<-hausdorff_dist(matrix_run[[xxxx]],matrix_run[[xxxx-kk]])
+        distance_distr<- append(x<-distance_distr,values<-c(temp1,temp1))
+        matrix_dist_haus[xxxx,xxxx-kk]<-temp1
+        matrix_dist_haus[xxxx-kk,xxxx]<-temp1
+      }
+    }
+  }
+}
+```
+
+From this code we achieved these following entities:
+
+- *matrix_run*: 60 elements, one for each running session
+- *matrix_dist_haus*: 60x60 matrix that represents the distances between the running session
+- *distance_distr* : ($D_n$) is a set of distances s.t. $D_n= \bigg\{ dist_H(G_i,G_j), \ for \ i \neq j \bigg\}$ that we will use to find some "interesting" epsilon (thanks to the quantile function() ). 
+
+Now we have the necessarily elements to start our analysis.
+
+```{r}
+epsilon <- quantile(distance_distr, prob=0.1)
+epsilon <- unname(epsilon)
+kde <- create_kde(matrix_dist_haus,epsilon=epsilon)
+```
+
+
+As the first epsilon candidate we take the $10th$ quantile of $D_n$.
+
+Let's take a look..
+
+```{r}
+hist(kde,breaks= 15, col='lightblue', border='white', prob=T)
+segments(0,0,0,12, col='red')
+points(0,12,pch=19, col='red')
+segments(0.12,0,0.12,5, col='red')
+points(0.12,5,pch=19, col='red')
+segments(0.275,0,0.275,5, col='red')
+points(0.275,5,pch=19, col='red')
+text(0.25, 10, 'main Modes', col='red')
+```
+
+We haven't enought observations to produce a good histogram!! But, however, it seems to have 3 modes.
+
+To avoid this problem and try to understand something before perform the **mean shift**, we can perform a **rude** descriptive analysis of our kde! We will proceed finding the top 5 paths with the highest local density and the bottom 5.
+
+## Top 5
+
+```{r}
+find_max_x5<- function(kde,matrix_dist_haus){
+  sorted_list <- sort(kde, decreasing= T)
+  return(sorted_list[1:5])
+}
+
+find_min_x5<- function(kde,matrix_dist_haus){
+  sorted_list <- sort(kde, decreasing= F)
+  return(sorted_list[1:5])
+}
+```
+
+
+
+```{r}
+
+top5<- find_max_x5(kde)
+idx=1
+top_list <- NULL
+while(idx<6)
+{
+  run<- which(kde==top5[idx])
+  len<- length(run)
+  for ( i in 1:len)
+  {
+    if( idx == 1)
+    {
+      
+      top_list <- append(top_list, run[i])
+      idx=idx+1
+    }
+    else if ( idx > 1 & idx<6)
+    {
+      
+      top_list <- append(top_list, run[i])
+      idx=idx+1
+    }
+ 
+  }
+}
+
+
+```
+
+```{r}
+x<- datadata$runtrack.lon
+y<- datadata$runtrack.lat
+ ggmap(myMapInD) + geom_point(data = data.frame(matrix_run[[top_list[1]]]),aes(x = data.frame(matrix_run[[top_list[1]]][,1]), y =data.frame(matrix_run[[top_list[1]]][,2])), size = 3, colour = I("green"), alpha = .05) + geom_point(data = data.frame(matrix_run[[top_list[2]]]), aes(x = data.frame(matrix_run[[top_list[2]]][,1]), y=data.frame(matrix_run[[top_list[2]]][,2])), size = 3, colour = I("blue"), alpha = .05) + geom_point(data = data.frame(matrix_run[[top_list[3]]]), aes(x = matrix_run[[top_list[3]]][,1], y=matrix_run[[top_list[3]]][,2]), size = 3, colour = I("darkorchid1"), alpha = .05) + geom_point(data = data.frame(matrix_run[[top_list[4]]]), aes(x =data.frame( matrix_run[[top_list[4]]][,1]), y=data.frame(matrix_run[[top_list[4]]][,2])), size = 3, colour = I("gray0"), alpha = .05) + geom_point(data=data.frame(matrix_run[[top_list[5]]]),aes(x = data.frame(matrix_run[[top_list[5]]][,1]), y=data.frame(matrix_run[[top_list[5]]][,2])), size = 3, colour = I("red"), alpha = .05)
+```
+
+The top 5 running sessions are characterized by the most number of element in the ($D_n$) that are $\le \epsilon$. In other words, these 5 sessions are the closest ones from all the other. 
+In this case, the common feature of these running session, is that they are the shortest.
+
+## Bottom 5
+```{r}
+
+bottom5<- find_min_x5(kde)
+idx=1
+bottom_list<- NULL
+while(idx<5)
+{
+  run<- which(kde==bottom5[idx])
+  len<- length(run)
+  for ( i in 1:len)
+  {
+    if( idx == 1)
+    {
+      
+      bottom_list <- append(bottom_list,run[i])
+      idx=idx+1
+      
+    }
+    else if ( idx > 1 & idx<6)
+    {
+      
+      bottom_list <- append(bottom_list,run[i])
+      idx=idx+1
+    }
+ 
+  }
+}
+```
+
+
+```{r}
+ ggmap(myMapInD) + geom_point(data = data.frame(matrix_run[[bottom_list[1]]]),aes(x = data.frame(matrix_run[[bottom_list[1]]][,1]), y =data.frame(matrix_run[[bottom_list[1]]][,2])), size = 3, colour = I("green"), alpha = .05) + geom_point(data = data.frame(matrix_run[[bottom_list[2]]]), aes(x = data.frame(matrix_run[[bottom_list[2]]][,1]), y=data.frame(matrix_run[[bottom_list[2]]][,2])), size = 3, colour = I("blue"), alpha = .05) + geom_point(data = data.frame(matrix_run[[bottom_list[3]]]), aes(x = matrix_run[[bottom_list[3]]][,1], y=matrix_run[[bottom_list[3]]][,2]), size = 3, colour = I("darkorchid1"), alpha = .05) + geom_point(data = data.frame(matrix_run[[bottom_list[4]]]), aes(x =data.frame( matrix_run[[bottom_list[4]]][,1]), y=data.frame(matrix_run[[bottom_list[4]]][,2])), size = 3, colour = I("gray0"), alpha = 0.05) + geom_point(data=data.frame(matrix_run[[bottom_list[5]]]),aes(x = matrix_run[[bottom_list[5]]][,1], y=matrix_run[[bottom_list[5]]][,2]), size = 3, colour = I("red"), alpha = .05)
+```
+
+In reverse, the bottom 5 running sessions are characterized by the less number of elements in the ($D_n$) that are $\ge \epsilon$. So in this case they are the most distant curves from all the others.
+The feature of this curve is that they are the longest ones.
+
+We confirm this results with Mean-Shift analysis:
+
+## Mean Shift clustering
+
+In this case, we use a value of $\epsilon$ smaller than the previous one because we've use a different Kernel. More precisely we've use a quantile $q_{\epsilon}$ requiring $prob=0.99$.
+```{r message=FALSE, warning=FALSE, results='hide'}
+####mean shift #####
+
+epsilon  <- quantile(distance_distr, prob=0.99)
+epsilon  <- unname(epsilon)
+
+clusters <- msClustering(t(matrix_dist_haus),h=epsilon)
+```
+
+
+```{r mean_shift_part2}
+
+cluster1 <- which( clusters$labels == 1 )
+cluster2 <- which( clusters$labels == 2 ) 
+cluster3 <- which( clusters$labels == 3 )
+
+kde <- create_kde(matrix_dist_haus,epsilon=epsilon)
+
+
+
+# plot cluster 1
+p <- ggmap(myMapInD)
+for( i in 1:length(cluster1) )
+{
+  
+    p <- p + geom_point(data= data.frame(matrix_run[[cluster1[i]]]),aes_string(x=matrix_run[[cluster1[i]]][,1],y=matrix_run[[cluster1[i]]][,2]), size= 2 , colour= i  ,alpha= .05)
+ 
+}
+print(p)
+```
+
+The length of our cluster:
+
+- 21 in $1^{th}$ cluster: *Runs with medium length*
+- 11 in $2^{th}$ cluster: *Runs with long length*
+- 28 in $3^{th}$ cluster: *Runs with short length*
+
+From this clustering, we can understand that our Marter has done more *short-distance* running session than *long-distance* running session.. **Can be improved!!**
+
+```{r}
+p <- ggmap(myMapInD)
+for( i in 1:length(cluster2) )
+{
+  
+    p <- p + geom_point(data= data.frame(matrix_run[[cluster2[i]]]),aes_string(x=matrix_run[[cluster2[i]]][,1],y=matrix_run[[cluster2[i]]][,2]), size= 2 , colour= i  ,alpha= .05)
+ 
+}
+print(p)
+```
+
+```{r}
+p <- ggmap(myMapInD)
+for( i in 1:length(cluster3) )
+{
+  
+    p <- p + geom_point(data= data.frame(matrix_run[[cluster3[i]]]),aes_string(x=matrix_run[[cluster3[i]]][,1],y=matrix_run[[cluster3[i]]][,2]), size= 2 , colour= i  ,alpha= .05)
+ 
+}
+print(p)
+```
+
+ 
+
+
+# THE EXTRA PART... THE OPTICS algorithm!
+
+**Let's go back to the first point, we have always used the mean-shift algorithm, but... can we do better?**
+
+NO but we have enought (or not?) time to attempt, so why don't try?
+
+Doing some research like [this](https://www.google.it/search?biw=1536&bih=710&ei=BqLQWvTwFpL4kwXKg5yoDg&q=clustering+gps+data&oq=clustering+gps+data&gs_l=psy-ab.3..0i203k1.2800.4281.0.4423.7.5.0.2.2.0.162.500.0j4.4.0....0...1c.1.64.psy-ab..2.5.345...33i160k1j0i22i30k1.0.uzHHLXDBL7A) (and why not, [this](https://www.google.it/search?q=come+finire+in+tempo+l%27homework+di+statistical+learning&oq=come+finire+in+tempo+l%27homework+di+statistical+learning&aqs=chrome..69i57.13222j0j9&sourceid=chrome&ie=UTF-8)), we often find the Density-Based Spatial Clustering of Applications with Noise (DBSCAN) and in his Hierarchical implementation (HDBSCAN) but mainly in [OPTICS](https://en.wikipedia.org/wiki/OPTICS_algorithm) for which we have also find this [analisys](https://www.vitavonni.de/blog/201410/2014102301-clustering-23-mio-tweet-locations.html)   
+
+## Let's start with a little bit of theory!
+The Ordering points to identify the clustering structure (OPTICS) algorithm is usefull to find density-based clusters in spatial data;
+This algorith requires two parameters: $\epsilon$ (eps_cl in the optics() function), which describes the maximum distance to consider, and MinPts, describing the number of points required to form a cluster. The first parameter isn't necessary because it can be simply set to the maximum possible value.   
+This algorithm is not a cluster's one but create a new sorted database that respect the cluster's structure (density based) [wikipedia for example](https://upload.wikimedia.org/wikipedia/commons/f/f9/OPTICS.svg); indeed this algorithm don't assign a specific processed pattern for each cluster, but it saves patterns in the order in which they are processed, adding the informations that can be subsequently used to find clusters.
+we will use this new database to extract hierarchical clustering of varying density using the [Xi method](https://github.com/mhahsler/dbscan/blob/master/R/optics_extractXi.R), that extracts clusters hierachically based on the steepnes of the rechability plot.
+
+## So why don't use this method for ours homework?
+
+```{r}
+res <- optics(data_ridotta, eps = 15,  minPts = 3500)
+```
+
+*Eps* is the upper limit of the size of the epsilon neighborhood, it doesn't influence so much the results, while the most important parameter is minPts, that is used to identify dense neighborhoods and the reachability distance, we set it at 3500 because if we use a little number (e.g the default 5) we obtain a lot of non significative clusters.
+
+
+```{r}
+# Extract hierarchical clustering of varying density using the Xi method
+ress <- extractXi(res, xi = 0.001)
+ress 
+plot(ress, ylab='Rechability') #reachability plot whith clusters
+```
+
+The *rechability-plot* is a special kind of dendrogram, it represents the hierarchical structure f the clusters.   It is a 2D plot, with the ordering of the points as processed by OPTICS on the x-axis and the reachability distance on the y-axis.  Colors in this plot are labels, and not computed by the algorithm; but it is well visible how the valleys in the plot correspond to the clusters in above data set. 
+
+```{r fig.height=5, fig.width=10}
+hullplot(data_ridotta, ress, xlab='Longitude', ylab='Latitude')
+```
+
+We achieved 4 clusters, the blue is the bigger one, it holds all data points.
+The green one is a reduction of the blue one that moves to modes, represented inside the others clusters: the cyan one and the red one.
+These two clusters are very similar to the most important (for the cardinality) clusters that we obtained whit the mean-Shift algorithm as we have seen before.
+        
+
+
+***
+<center> ![](https://gdsit.cdn-immedia.net/2015/05/bolt.jpg){ width=50% } </center>
+***
