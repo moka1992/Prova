@@ -98,7 +98,7 @@ in abundance,  but naive Bayes outperforms logistic regression when training dat
 First of all, we load the dataset.
 
 ```{r}
-load("~/OneDrive/Universit‡/Data Science/aa-Cartella R studio/daily-sport.RData")
+load("~/OneDrive/Universit√†/Data Science/aa-Cartella R studio/daily-sport.RData")
 ```
 
 
@@ -765,14 +765,14 @@ Also in this tree we can find the $RL.zMag$ in the first position.
 How perform a predictor for p1 respect to the other 7 people?
 
 ```{r}
-load("~/OneDrive/Universit‡/Data Science/aa-Cartella R studio/p1.Rda")
-load("~/OneDrive/Universit‡/Data Science/aa-Cartella R studio/p2.Rda")
-load("~/OneDrive/Universit‡/Data Science/aa-Cartella R studio/p3.Rda")
-load("~/OneDrive/Universit‡/Data Science/aa-Cartella R studio/p4.Rda")
-load("~/OneDrive/Universit‡/Data Science/aa-Cartella R studio/p5.Rda")
-load("~/OneDrive/Universit‡/Data Science/aa-Cartella R studio/p6.Rda")
-load("~/OneDrive/Universit‡/Data Science/aa-Cartella R studio/p7.Rda")
-load("~/OneDrive/Universit‡/Data Science/aa-Cartella R studio/p8.Rda")
+load("~/OneDrive/Universit√†/Data Science/aa-Cartella R studio/p1.Rda")
+load("~/OneDrive/Universit√†/Data Science/aa-Cartella R studio/p2.Rda")
+load("~/OneDrive/Universit√†/Data Science/aa-Cartella R studio/p3.Rda")
+load("~/OneDrive/Universit√†/Data Science/aa-Cartella R studio/p4.Rda")
+load("~/OneDrive/Universit√†/Data Science/aa-Cartella R studio/p5.Rda")
+load("~/OneDrive/Universit√†/Data Science/aa-Cartella R studio/p6.Rda")
+load("~/OneDrive/Universit√†/Data Science/aa-Cartella R studio/p7.Rda")
+load("~/OneDrive/Universit√†/Data Science/aa-Cartella R studio/p8.Rda")
 ```
 
 ```{r}
