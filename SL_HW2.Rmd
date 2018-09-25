@@ -1,0 +1,1500 @@
+---
+title: "StatLearn / Homework 02"
+author: "Manzari Matteo - 1660582, Mocavini Daniele - 1475062, Vozzella Sara - 1666172"
+output:
+  html_document:
+    code_folding: show
+    toc: true
+    toc_depth: 3 
+    toc_float: true
+    number_sections: false
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Library
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(viridis)
+library(scatterplot3d)
+library(MASS)
+library(e1071)
+library(randomForest)
+library(rpart)
+library(caret)
+library(party)
+library(doParallel)
+```
+
+&nbsp;
+
+
+The focus of our analysis is to understand the different way to find a **Classfier**.
+The *Classification Rule* or *Classifier* mainly depends on the dataset analyzed, so doesn't exist an _absolute optimal classifier_ but it can change by each singular situation.
+
+More precisely we focused on Naive Bayesian Classifier and some comparisons with the latter.
+
+In our case the dataset analyzed concerns the human activities performed while wearing inertial and magnetic sensor units.
+
+The total  dataset available on the UCI Machine Learning Repository describes 19 activities performed by 8 people that wear sensor units on the chest, arms and legs; but we focused on just 4 activities $(walking, stepper, cross trainer, jumping)$ performed by a single person and as covariates the measurements taken by all the 9 sensors $(x,y,z accelerometers, x,y,z gyroscopes, x,y,z magnetometers)$ on each of the 5 units on torso (T), right arm (RA), left arm (LA), right leg (RL), left leg (LL) for a total of 45 features.
+
+# Part 1
+
+The **naive Bayes classifier** is one of the most efficent and effective inductive learning algorithms.
+The most important assumption to use this classifier is the conditional indipendence of the variables that is rarely true in the real world applications.
+The conditional indipendence is the situations in wich all the attributes are indipendend given the class variable.
+Naive Bayes classifiers can be trained very efficiently in a supervised learning setting. In many practical applications, parameter estimation for naive Bayes models uses the method of maximum likelihood. Despite their naive design and apparently oversimplified assumptions, naive Bayes classifiers have worked quite well in many complex real-world situations.
+
+Recommendation System: Naive Bayes classifiers are used in various inferencing systems for making certain recommendations to users out of a list of possible options.
+Real-Time Prediction: Naive Bayes is a fast algorithm, which makes it an ideal fit for making predictions in real time.
+Multiclass Prediction: This algorithm is also well-known for its multiclass prediction feature. Here, we can predict the probability of multiple classes of the target variable.
+Sentiment Analysis: Naive Bayes is used in sentiment analysis on social networking datasets like Twitter* and Facebook* to identify positive and negative customer sentiments.
+Text Classification: Naive Bayes classifiers are frequently used in text classification and provide a high success rate, as compared to other algorithms.
+Spam Filtering: Naive Bayes is widely used inspam filtering for identifying spam email.
+
+The good performance of naive bayes is surprasing because it makes an assumption that is most always violated in real word applications: 
+**given the class value all the attributes are indipendent.**
+It's classification accuracy does not depend on the dependecies, naive bayes may still have hight accuracy on dataset in which strong dependecies exist among
+attributes (Domingos and Pazzani 1997).
+
+The key point is to understand how the depencies affect the classification, and under what conditions the dependency do not affect the classification.
+Essentially the classifications is affected by the _*dependence distribution*_, instead the _*dependency among attributes*_.
+
+When the dependencies among all attributes work together, however, they may cancel each other out and no longer affect the classification. Therefore, we argue that 
+it is the distribution of dependencies among all attributes over classes that affects the classification of naive Bayes, not merely the dependencies themselves.
+
+- How is possible Naive Bayes is still the optimal Classifiers?
+
+When the dependencies among all attributes works togheder, however, they may cancell each other out and no longer affect the classifications.
+But be carefull, Naive Bayes is not the absolute best classifiers; there are some situations in which the result is worst then others methods.
+For example in the situations in wich one of the following 2 conditions are true
+\[
+\begin{cases}
+1.\quad \mu^{+}_1=-\mu^{-}_2,\quad\quad \mu^{-}_1=-\mu^{+}_2 \quad\quad and \quad \sigma_{12}+\sigma>0\\
+2.\quad \mu^{+}_1=\mu^{-}_2,\quad\quad \mu^{+}_2=-\mu^{-}_1 \quad\quad and \quad \sigma_{12}-\sigma>0
+\end{cases}
+\]
+in which the different classes are represented with $\{+, -\}$, so $\mu^+_i$ represents the mean of the $i-th$ varable in the class $\{+\}$; essentially $\mathbb{E}\{i-th|Class=+\}$. 
+
+it perform like the target classifier (LDA).
+
+It shows that naive bayes classifier is still optimal under certain conditions, even thought the conditional indipendence assumption is violeted.
+In other words the conditional indipendence assumption is not necessary conditional for the optimality of the Naive Bayes.
+In the case in wich the naive bayes is not the best choice we can try to use some different methods, for example LDA (Linear discriminant analysis), random forest, logistic
+regression and so on.
+The main cause for the fast speed of naive Bayes training is that it converges toward its asymptotic accuracy at a different rate than other methods, like logistic regression,
+support vector machines, and so on.
+Naive Bayes parameter estimates converge toward their asymptotic values in order of log(n) examples, where n is number of dimensions. In contrast, logistic regression parameter estimates
+converge more slowly, requiring order n examples. It is also observed that in several datasets logistic regression outperforms naive Bayes when many training examples are available
+in abundance,  but naive Bayes outperforms logistic regression when training data is scarce.
+
+
+
+# Part 2
+
+First of all, we load the dataset.
+
+```{r}
+load("~/OneDrive/Università/Data Science/aa-Cartella R studio/daily-sport.RData")
+```
+
+
+We chose the stepper and the cross trainer, then taking the accelerometer sensors on the left leg and let's see how the variable of interest (id) is distributed.
+
+```{r}
+data=subset(dailysport,subset=(dailysport$id=='stepper'|dailysport$id=='crosstr'))
+data=droplevels(data)
+select_var=c('id','LA-xAcc','LA-yAcc','LA-zAcc')
+ds.small=data[select_var]
+
+table(ds.small$id)
+```
+
+Make the plot on three-dimensional space for 500 random points.
+
+```{r}
+colors <- c("darkblue", "darkgoldenrod2")
+colorss <- colors[as.numeric(ds.small$id)]
+rNames <- row.names(ds.small) 
+sampRows <- sample(rNames,500) 
+plot <- subset(ds.small,rNames%in%sampRows) 
+colors <- colors[as.numeric(plot$id)]
+scatterplot3d(plot[,2:4], pch = 16, color = colors)
+```
+
+Create Train Set and Test set.
+
+```{r}
+n_train=round(0.7*nrow(ds.small))
+idx_train <- sort (sample (1:nrow(ds.small), n_train))
+ds.train <- ds.small [idx_train, ]
+idx_test <- setdiff(1:nrow(ds.small), idx_train)
+ds.test <- ds.small [idx_test, ]
+
+```
+
+## Discriminant Analysis
+
+```{r}
+lda.out <- lda(ds.small$id ~ ., ds.small,subset = idx_train)
+```
+
+#### Training Set
+
+Prediction from train set.
+
+```{r}
+pred.tr <-  predict(lda.out, ds.small[-idx_test, ])$class
+```
+
+#### Training Error
+
+Let's see how our predictor behaves on the training set.
+
+```{r}
+table(pred.tr, ds.train$id)
+mean(pred.tr == ds.train$id) 
+```
+
+#### Test Set
+
+Repeat it on the test set
+
+```{r}
+pred.te <-  predict(lda.out, ds.small[-idx_train, ])$class
+```
+
+#### Test Error
+
+```{r}
+table(pred.te, ds.test$id)
+mean(pred.te == ds.test$id) 
+```
+
+Training error is the one that you get when you run the trained model back on the training data. Remember that this data has already been used to train the model and this necessarily doesn't mean that the model once trained will accurately perform when applied back on the training data itself.
+ 
+Usually if your train error is low and test error high, you are likely overfitting to your train data, in ours case we have a comparabile results so we are not overfitting.
+
+## Naive Bayes
+
+What happens using naive bayes instead of discriminant Analysis.
+
+```{r}
+bayes.out <- naiveBayes(ds.train$id ~ ., data = ds.train)
+```
+
+#### Training Set
+
+Start from train set.
+
+```{r}
+pred.tr_bayes <-  predict(bayes.out, ds.small[-idx_test, ])
+```
+
+#### Training Error
+
+Let's see how our predictor behaves on the training set.
+
+```{r}
+table(pred.tr_bayes, ds.train$id)
+mean(pred.tr_bayes == ds.train$id) 
+```
+
+#### Test Set
+
+Repeat it on the test set.
+
+```{r}
+pred.te_bayes <-  predict(bayes.out, ds.small[-idx_train, ])
+```
+
+#### Test Error
+
+```{r}
+table(pred.te_bayes, ds.test$id)
+mean(pred.te_bayes == ds.test$id)
+```
+
+The results achieved with this new classifier are better than the previous but not pretty significantly.
+
+
+## 1-dimensional densities
+
+### Let's start with **Stepper**
+
+```{r}
+data=subset(dailysport,subset=(dailysport$id=='stepper'))
+data=droplevels(data)
+select_var=c('id','LA-xAcc','LA-yAcc','LA-zAcc')
+ds.small=data[select_var]
+
+```
+
+```{r}
+dens_x <- density(ds.small$`LA-xAcc`)
+dens_y <- density(ds.small$`LA-yAcc`)
+dens_z <- density(ds.small$`LA-zAcc`)
+```
+
+```{r fig.height=5, fig.width=18}
+par(mfrow=c(1,3))
+plot(dens_x, main='LA-xAcc', lwd=3, col='orchid')
+plot(dens_y, main='LA-yAcc', lwd=3, col='dodgerblue')
+plot(dens_z, main='LA-zAcc', lwd=3, col='blue')
+```
+
+
+#### Build 95% bootstrap confidence bands around them
+
+```{r fig.height=5, fig.width=18}
+par(mfrow=c(1,3))
+title=c('LA-xAcc', 'LA-yAcc', 'LA-zAcc')
+for (i in 2:4 ){
+  fit1 <- density(ds.small[,i])
+  fit2 <- replicate(1000,
+                    { 
+                      #Sample with replacement, for the bootstrap from the
+                      #original dataset and save the resample to x
+                      x <- sample(ds.small[,i] , replace=TRUE)                    
+                      
+                      #Generate the density from the resampled dataset, and
+                      #extract y coordinates to generate variablity bands
+                      #for that particular x coordinate in the smooth curve
+                      density(x, from=min(fit1$x), to=max(fit1$x))$y
+                    }) 
+  
+  fit3 <- apply(fit2, 1, quantile, c(0.025,0.975) )
+  
+  plot(fit1, ylim = range(fit3), main=title[i-1])
+  polygon( c(fit1$x, rev(fit1$x)), c(fit3[1,], rev(fit3[2,])),
+           col='black', density = -0.5, border=F)
+  lines(fit1, col = "red", lwd = 2)
+}
+
+```
+
+### Continue with **Crosstr** 
+
+```{r}
+data=subset(dailysport,subset=(dailysport$id=='crosstr'))
+data=droplevels(data)
+select_var=c('id','LA-xAcc','LA-yAcc','LA-zAcc')
+ds.small=data[select_var]
+
+```
+
+```{r}
+dens_x <- density(ds.small$`LA-xAcc`)
+dens_y <- density(ds.small$`LA-yAcc`)
+dens_z <- density(ds.small$`LA-zAcc`)
+```
+
+```{r fig.height=5, fig.width=18}
+par(mfrow=c(1,3))
+plot(dens_x, main='LA-xAcc', lwd=3, col='orchid')
+plot(dens_y, main='LA-yAcc', lwd=3, col='dodgerblue')
+plot(dens_z, main='LA-zAcc', lwd=3, col='blue')
+
+```
+
+
+#### Build 95% bootstrap confidence bands around them
+
+```{r fig.height=5, fig.width=18}
+par(mfrow=c(1,3))
+title=c('LA-xAcc', 'LA-yAcc', 'LA-zAcc')
+
+for (i in 2:4 ){
+  fit1 <- density(ds.small[,i])
+  fit2 <- replicate(1000,
+                    { 
+                      #Sample with replacement, for the bootstrap from the
+                      #original dataset and save the resample to x
+                      x <- sample(ds.small[,i] , replace=TRUE)                    
+                      
+                      #Generate the density from the resampled dataset, and
+                      #extract y coordinates to generate variablity bands
+                      #for that particular x coordinate in the smooth curve
+                      density(x, from=min(fit1$x), to=max(fit1$x))$y
+                    }) 
+  
+  fit3 <- apply(fit2, 1, quantile, c(0.025,0.975) )
+  
+  plot(fit1, ylim = range(fit3), main=title[i-1])
+  polygon( c(fit1$x, rev(fit1$x)), c(fit3[1,], rev(fit3[2,])),
+           col='black', density = -0.5, border=F)
+  lines(fit1, col = "red", lwd = 2)
+}
+
+```
+
+## Personal Naive Bayes Classifiers
+
+#### Kernel Function
+To implement our personal version of the Naive Bayes Classifiers, we decide to use a **Gaussian kernel** .
+
+```{r}
+kernel <- function(x,train,h){
+  n<- length(train)
+  aux<-0
+  for(x_i in train){
+    aux<- aux+ dnorm((x- x_i)/h)
+  }
+  return(aux/(n*h))
+}
+```
+
+#### Priors
+
+We save in $prior_p$ the prior probability for each $id$.
+
+```{r}
+prior_p<-c()
+for(id in 1:length(levels(ds.train$id))){
+  prior_p[id]<- length(ds.train[2][ds.train[1]==levels(ds.train$id)[id]])/nrow(ds.train)
+}
+```
+
+#### Core Functions
+
+In this chunk we obtain 2 important lists: $\text{kde_ matrix}$ and $\text{density_}$
+
+The first one is a "list" of function; each function represent the kernel density 
+for each id and column of the dataset.
+Thanks to density_ we can make the product of all the kde (the strong naive assumption).
+
+```{r}
+kde_matrix<- c()
+train_<- c()
+h_<-c()
+contatore=1
+for (id in levels(ds.train$id)){
+  for (column in 2:ncol(ds.train)){
+    train_[[contatore]] <- ds.train[column][ds.train[1]==id]
+    h_[contatore]<- bandwidth.nrd(train_[[contatore]])
+    kde_matrix[[contatore]] <-  substitute(function(x,train,h_b){ kernel(x,train=train , h = h_b ) })
+    contatore= contatore+1
+  }
+}
+
+
+density_<- c()
+for (id in 1:length(levels(ds.train$id))){
+  if (id==1){
+    density_[[id]]<- substitute(function(x, train, h){ return(eval(kde_matrix[[1]])(x[1],train[[1]],h_[1])*
+                                                                eval(kde_matrix[[2]])(x[2],train[[2]],h_[2])*
+                                                                eval(kde_matrix[[3]])(x[3],train[[3]],h_[3]))})
+  }
+  else if (id==2){
+    density_[[id]]<- substitute(function(x, train,h) { return(eval(kde_matrix[[4]])(x[1],train[[4]],h_[4])*eval(kde_matrix[[5]])(x[2],train[[5]],h_[5])*eval(kde_matrix[[6]])(x[3], train[[6]],h_[6]))})
+  }
+}
+```
+
+#### Classification
+
+Start from the small train set.
+
+```{r}
+# Parallelize!
+core <- detectCores()
+cl <- makeCluster(core)
+registerDoParallel(cl)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+B<- nrow(ds.train)
+class_<- rep(NA, B)
+
+
+class_<- foreach (obs = 1:B, .combine = c, .export=ls(.GlobalEnv))%dopar% {
+  num<- c()
+  for ( i in 1:length(density_)){
+    num[i]<- eval(density_[[i]])(c(ds.train[obs,2:4][[1]],ds.train[obs,2:4][[2]],ds.train[obs,2:4][[3]]),train_,h_)* prior_p[i]
+  }
+  den= sum(num)
+  nome<- num[1]/den
+  class_[obs] <- ifelse(nome>0.5,1,2)
+}
+stopCluster(cl)
+
+classifier<- ifelse(class_==1,'crosstr','stepper')
+table(classifier)
+mean(ds.train$id == classifier )
+```
+
+and continue with the small test set.
+
+
+```{r}
+# Parallelize!
+core <- detectCores()
+cl <- makeCluster(core)
+registerDoParallel(cl)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+B<- nrow(ds.test)
+class_<- rep(NA, B)
+
+
+class_<- foreach (obs = 1:B, .combine = c, .export=ls(.GlobalEnv))%dopar% {
+  num<- c()
+  for ( i in 1:length(density_)){
+    num[i]<- eval(density_[[i]])(c(ds.test[obs,2:4][[1]],ds.test[obs,2:4][[2]],ds.test[obs,2:4][[3]]),train_,h_)* prior_p[i]
+  }
+  den= sum(num)
+  nome<- num[1]/den
+  class_[obs] <- ifelse(nome>0.5,1,2)
+}
+stopCluster(cl)
+
+classifier<- ifelse(class_==1,'crosstr','stepper')
+table(classifier)
+mean(ds.test$id == classifier )
+```
+
+# Part 3 - Analyze the full dataset doing our best
+
+Let's create Train Set and Test set.
+
+```{r}
+names(dailysport) <- make.names(names(dailysport)) # For illegal name
+set.seed(100)
+train <- sample(nrow(dailysport), 0.7*nrow(dailysport), replace = FALSE)
+TrainSet <- dailysport[train,]
+TestSet <- dailysport[-train,]
+
+names(TrainSet) <- make.names(names(TrainSet)) #For illegal name
+names(TestSet) <- make.names(names(TestSet)) #For illegal name
+```
+
+
+## Naive Bayes Classification
+
+The first test we decided to do is to apply the naive bayes classification to the full dataset.
+
+```{r}
+bayes.out <- naiveBayes(TrainSet$id ~ ., data = TrainSet)
+```
+
+#### Train Set
+
+Start with the train set and we also measure how much time is needed.
+
+```{r}
+system.time(
+pred.tr_bayes <-  predict(bayes.out, TrainSet)
+)
+```
+
+#### Train Error
+
+```{r}
+table(pred.tr_bayes, TrainSet$id)
+mean(pred.tr_bayes == TrainSet$id) 
+```
+
+#### Test Set
+
+And let's continue with the test set.
+
+```{r}
+system.time(
+pred.te_bayes <-  predict(bayes.out, TestSet)
+)
+```
+
+#### Test Error
+
+```{r}
+table(pred.te_bayes, TestSet$id)
+mean(pred.te_bayes == TestSet$id)
+```
+
+_Although obtaining excellent precision, the Naive Bayes is not particularly fast (about 11 seconds for train set and about 5 for test set) and therefore we decided to try also with other methods ..._
+
+
+## Decision Tree
+
+We decided to try with the [Classification Tree](https://en.wikipedia.org/wiki/Decision_tree_learning).
+
+```{r}
+system.time(
+model_dt <- ctree(id ~ ., data = TrainSet)
+)
+```
+
+#### Training Set
+
+```{r}
+model_dt_1 <- predict(model_dt, data = TrainSet)
+```
+
+#### Training Error
+
+```{r}
+table(model_dt_1, TrainSet$id)
+mean(model_dt_1 == TrainSet$id)
+```
+
+#### Test Set
+
+```{r}
+model_dt_vs = predict(model_dt, newdata = TestSet)
+```
+
+#### Test Error
+
+```{r}
+table(model_dt_vs, TestSet$id)
+mean(model_dt_vs == TestSet$id)
+```
+
+This method is actually faster but we don't get the perfect predictor so...
+
+_why don't try to create a Forest of decision tree?_
+
+## Random Forest
+
+The third method we tested is the [random forest](https://en.wikipedia.org/wiki/Random_forest)
+
+The main value to set is the number of trees (ntree): The [official page of the algorithm](https://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#remarks) states that random forest does not overfit, and you can use as much trees as you want, but the greater the number of trees, the greater the cpu effort.
+Remembering that 
+- if the number of observations is large, but the number of trees is too small, some observations will be predicted only once or even not at all 
+- If the number of predictors is large but the number of trees is too small, then some features can (theoretically) be missed in all subspaces used
+
+We decided to take as number of tree the rounded number of predictors
+
+```{r}
+system.time(
+model1_1 <- randomForest(id ~ ., data = TrainSet, ntree=50)
+)
+model1_1
+```
+
+#### Train Set and Train Error
+
+```{r}
+predTrain <- predict(model1_1, TrainSet, type = "class")
+table(predTrain, TrainSet$id)
+```
+
+#### Test Set and Test Error
+
+```{r}
+predTest <- predict(model1_1, TestSet, type = "class")
+table(predTest,TestSet$id)
+mean(predTest == TestSet$id) 
+```
+
+We obteined zero misclassification in a faster way (about 2 seconds vs 10 seconds of Naive Bayes) but.... 
+
+### _Do we really need all the 46 variables?_
+
+
+Let's see the **Gini Index**, remember that low Gini (i.e. higher descrease in Gini) means that a particular predictor variable plays a greater role in partitioning the data into the defined classes.
+
+```{r}
+imp <- importance(model1_1) 
+imp
+```
+
+So what about to take just the 6 more influent (the six that have influence >1000)?
+
+```{r}
+rank <- sort(imp, index.return=TRUE, decreasing = TRUE)
+idx=rank$ix+1
+data_reduce <- dailysport [,c(1,idx[1:6])]
+
+names(data_reduce)
+```
+
+
+**Reduce ours dataset**
+
+```{r}
+dataset_ridotto <- data.frame(dailysport$id, dailysport$T.yMag,dailysport$RA.xMag,
+                              dailysport$LA.zMag,dailysport$RL.xMag,
+                              dailysport$RL.zMag, dailysport$LL.xMag)
+names(dataset_ridotto) <- make.names(names(dataset_ridotto)) #For illegal name
+```
+
+Create again Train and Test.
+
+```{r}
+set.seed(100)
+
+train <- sample(nrow(dataset_ridotto), 0.7*nrow(dataset_ridotto), replace = FALSE)
+TrainSet <- dataset_ridotto[train,]
+TestSet <- dataset_ridotto[-train,]
+names(TrainSet) <- make.names(names(TrainSet)) #For illegal name
+names(TestSet) <- make.names(names(TestSet)) #For illegal name
+```
+
+```{r}
+model1 <- randomForest(dailysport.id ~ ., data = TrainSet, ntree=10) 
+model1
+```
+
+Start from train set.
+
+```{r}
+predTrain <- predict(model1, TrainSet, type = "class")
+table(predTrain, TrainSet$dailysport.id)  
+```
+
+Continue with Test set.
+
+```{r}
+predTest <- predict(model1, TestSet, type = "class")
+```
+
+Checking classification accuracy.
+
+```{r}
+table(predTest,TestSet$dailysport.id)
+mean(predTest == TestSet$dailysport.id) 
+```
+
+```{r}
+imp <- importance(model1) 
+imp
+```
+
+Even using 6 of the 46 variables we continue to have a perfect result in terms of accuracy, we repeat by checking what we get with the _2 most influential_.
+
+```{r}
+rank <- sort(imp, index.return=TRUE, decreasing = TRUE)
+idx=rank$ix+1
+data_reduce <- dataset_ridotto [,c(1,idx[1:2])]
+
+names(data_reduce)
+```
+
+
+```{r}
+dataset_ridotto <- data.frame(dailysport$id, 
+                              dailysport$T.yMag,
+                              dailysport$RL.zMag)
+names(dataset_ridotto) <- make.names(names(dataset_ridotto)) #For illegal name
+```
+
+```{r}
+set.seed(100)
+
+train <- sample(nrow(dataset_ridotto), 0.7*nrow(dataset_ridotto), replace = FALSE)
+TrainSet <- dataset_ridotto[train,]
+TestSet <- dataset_ridotto[-train,]
+names(TrainSet) <- make.names(names(TrainSet)) #For illegal name
+names(TestSet) <- make.names(names(TestSet)) #For illegal name
+```
+
+```{r}
+system.time(
+model1 <- randomForest(dailysport.id ~ ., data = TrainSet, ntree=5))
+model1
+
+predTrain <- predict(model1, TrainSet, type = "class")
+table(predTrain, TrainSet$dailysport.id)  
+
+predTest <- predict(model1, TestSet, type = "class")
+
+# Checking classification accuracy
+table(predTest,TestSet$dailysport.id)
+mean(predTest == TestSet$dailysport.id) 
+
+imp <- importance(model1) 
+imp
+```
+
+Using only 2, we get again a value of 95% accuracy, so what about just taking the 
+most influent?
+
+```{r}
+dataset_ridotto <- data.frame(dailysport$id, 
+                              dailysport$RL.zMag
+                              )
+names(dataset_ridotto) <- make.names(names(dataset_ridotto)) #For illegal name
+```
+
+```{r}
+set.seed(100)
+
+train <- sample(nrow(dataset_ridotto), 0.7*nrow(dataset_ridotto), replace = FALSE)
+TrainSet <- dataset_ridotto[train,]
+TestSet <- dataset_ridotto[-train,]
+names(TrainSet) <- make.names(names(TrainSet)) #For illegal name
+names(TestSet) <- make.names(names(TestSet)) #For illegal name
+```
+
+```{r}
+system.time(
+model1 <- randomForest(dailysport.id ~ ., data = TrainSet, ntree=5))
+model1
+
+predTrain <- predict(model1, TrainSet, type = "class")
+table(predTrain, TrainSet$dailysport.id)  
+
+predTest <- predict(model1, TestSet, type = "class")
+
+# Checking classification accuracy
+table(predTest,TestSet$dailysport.id)
+mean(predTest == TestSet$dailysport.id) 
+
+```
+
+We can finally see how the variable $RL.zMag$ is the **most influential**, in fact using only that we are still able to obtain an accuracy of about 94%, this variable is very significant in the precticion analysis.
+
+Is this variable so influent also in the others models?
+
+Let's see the tree structor of the decision tree
+
+```{r}
+plot(model_dt)
+```
+
+Also in this tree we can find the $RL.zMag$ in the first position.
+
+# Extra Part
+How perform a predictor for p1 respect to the other 7 people?
+
+```{r}
+load("~/OneDrive/Università/Data Science/aa-Cartella R studio/p1.Rda")
+load("~/OneDrive/Università/Data Science/aa-Cartella R studio/p2.Rda")
+load("~/OneDrive/Università/Data Science/aa-Cartella R studio/p3.Rda")
+load("~/OneDrive/Università/Data Science/aa-Cartella R studio/p4.Rda")
+load("~/OneDrive/Università/Data Science/aa-Cartella R studio/p5.Rda")
+load("~/OneDrive/Università/Data Science/aa-Cartella R studio/p6.Rda")
+load("~/OneDrive/Università/Data Science/aa-Cartella R studio/p7.Rda")
+load("~/OneDrive/Università/Data Science/aa-Cartella R studio/p8.Rda")
+```
+
+```{r}
+# script to get the datasets for each person in the appendix
+```
+
+```{r}
+p1$id = as.character(p1$id)
+p1$id = factor(p1$id)
+```
+
+Recreate Random Forest for p1 (the one we already had) and use it as Train Set
+
+```{r}
+rf <- randomForest(p1$id ~ ., data = p1, ntree=50)
+predTrain <- predict(rf, p1, type = "class")
+```
+
+Now use as Test Test the other 7
+
+```{r}
+risultati <- c()
+
+risultati[1] <-   mean(predTrain == p1$id)
+pred2 <- predict(rf, p2, type = "class")
+risultati[2] <- mean(pred2 == p2$id)
+pred3 <- predict(rf, p3, type = "class")
+risultati[3] <- mean(pred3 == p3$id)
+pred4 <- predict(rf, p4, type = "class")
+risultati[4] <- mean(pred4 == p4$id)
+pred5 <- predict(rf, p5, type = "class")
+risultati[5] <- mean(pred5 == p5$id)
+pred6 <- predict(rf, p6, type = "class")
+risultati[6] <- mean(pred6 == p6$id)
+pred7 <- predict(rf, p7, type = "class")
+risultati[7] <- mean(pred7 == p7$id)
+pred8 <- predict(rf, p8, type = "class")
+risultati[8] <- mean(pred8 == p8$id)
+
+risultati
+mean(risultati[2:8])
+```
+
+The classifier does not seem to work so well, we have in fact obtained 3 times accuracy values below 60%, with an overall average of 0.73
+The results are quite variable, it seems that people do not move equally while performing the same activity ...
+
+### How many people are necessary to get a valid classifier?
+
+let's try to take 1 more person (the one classified worst)
+
+```{r}
+total <- rbind(p1, p2)
+```
+
+```{r}
+rf <- randomForest(total$id ~ ., data = total, ntree=50)
+predTrain <- predict(rf, total, type = "class")
+```
+
+```{r}
+risultati <- c()
+
+risultati[1] <-   mean(predTrain == p1$id)
+pred2 <- predict(rf, p2, type = "class")
+risultati[2] <- mean(pred2 == p2$id)
+pred3 <- predict(rf, p3, type = "class")
+risultati[3] <- mean(pred3 == p3$id)
+pred4 <- predict(rf, p4, type = "class")
+risultati[4] <- mean(pred4 == p4$id)
+pred5 <- predict(rf, p5, type = "class")
+risultati[5] <- mean(pred5 == p5$id)
+pred6 <- predict(rf, p6, type = "class")
+risultati[6] <- mean(pred6 == p6$id)
+pred7 <- predict(rf, p7, type = "class")
+risultati[7] <- mean(pred7 == p7$id)
+pred8 <- predict(rf, p8, type = "class")
+risultati[8] <- mean(pred8 == p8$id)
+
+risultati
+mean(risultati[3:8])
+```
+
+Already with 2 people we get a classifier accurate to 87%, a big step forward ...
+Let's try to add 1 more person
+
+
+```{r}
+total <- rbind(p1, p2,p5)
+```
+
+```{r}
+rf <- randomForest(total$id ~ ., data = total, ntree=50)
+predTrain <- predict(rf, total, type = "class")
+```
+
+```{r}
+risultati <- c()
+
+risultati[1] <-   mean(predTrain == p1$id)
+pred2 <- predict(rf, p2, type = "class")
+risultati[2] <- mean(pred2 == p2$id)
+pred3 <- predict(rf, p3, type = "class")
+risultati[3] <- mean(pred3 == p3$id)
+pred4 <- predict(rf, p4, type = "class")
+risultati[4] <- mean(pred4 == p4$id)
+pred5 <- predict(rf, p5, type = "class")
+risultati[5] <- mean(pred5 == p5$id)
+pred6 <- predict(rf, p6, type = "class")
+risultati[6] <- mean(pred6 == p6$id)
+pred7 <- predict(rf, p7, type = "class")
+risultati[7] <- mean(pred7 == p7$id)
+pred8 <- predict(rf, p8, type = "class")
+risultati[8] <- mean(pred8 == p8$id)
+
+risultati
+mean(c(risultati[3],risultati[4],risultati[6],risultati[7],risultati[8]))
+```
+
+Adding a third person we get a satisfactory 91%
+
+#### Reduce
+
+In the previous analysis we noticed that only a few variables were enough to build our classifier, let's see if we get the same results in comparison with other people
+
+```{r}
+p1 <- data.frame(p1$id, p1$T_ymag,p1$RA_xmag,
+                              p1$LA_zmag,p1$RL_xmag,
+                              p1$RL_zmag, p1$LL_xmag)
+colnames(p1) <- c("id","T_ymag", "RA_xmag","LA_zmag","RL_xmag","RL_zmag","LL_xmag")
+
+p2 <- data.frame(p2$id, p2$T_ymag,p2$RA_xmag,
+                              p2$LA_zmag,p2$RL_xmag,
+                              p2$RL_zmag, p2$LL_xmag)
+colnames(p2) <- c("id","T_ymag", "RA_xmag","LA_zmag","RL_xmag","RL_zmag","LL_xmag")
+p3 <- data.frame(p3$id, p3$T_ymag,p3$RA_xmag,
+                              p3$LA_zmag,p3$RL_xmag,
+                              p3$RL_zmag, p3$LL_xmag)
+colnames(p3) <- c("id","T_ymag", "RA_xmag","LA_zmag","RL_xmag","RL_zmag","LL_xmag")
+p4 <- data.frame(p4$id, p4$T_ymag,p4$RA_xmag,
+                              p4$LA_zmag,p4$RL_xmag,
+                              p4$RL_zmag, p4$LL_xmag)
+colnames(p4) <- c("id","T_ymag", "RA_xmag","LA_zmag","RL_xmag","RL_zmag","LL_xmag")
+p5 <- data.frame(p5$id, p5$T_ymag,p5$RA_xmag,
+                              p5$LA_zmag,p5$RL_xmag,
+                              p5$RL_zmag, p5$LL_xmag)
+colnames(p5) <- c("id","T_ymag", "RA_xmag","LA_zmag","RL_xmag","RL_zmag","LL_xmag")
+p6 <- data.frame(p6$id, p6$T_ymag,p6$RA_xmag,
+                              p6$LA_zmag,p6$RL_xmag,
+                              p6$RL_zmag, p6$LL_xmag)
+colnames(p6) <- c("id","T_ymag", "RA_xmag","LA_zmag","RL_xmag","RL_zmag","LL_xmag")
+p7 <- data.frame(p7$id, p7$T_ymag,p7$RA_xmag,
+                              p7$LA_zmag,p7$RL_xmag,
+                              p7$RL_zmag, p7$LL_xmag)
+colnames(p7) <- c("id","T_ymag", "RA_xmag","LA_zmag","RL_xmag","RL_zmag","LL_xmag")
+p8 <- data.frame(p8$id, p8$T_ymag,p8$RA_xmag,
+                              p8$LA_zmag,p8$RL_xmag,
+                              p8$RL_zmag, p8$LL_xmag)
+colnames(p8) <- c("id","T_ymag", "RA_xmag","LA_zmag","RL_xmag","RL_zmag","LL_xmag")
+```
+
+```{r}
+rf <- randomForest(p1$id ~ ., data = p1, ntree=50)
+predTrain <- predict(rf, p1, type = "class")
+```
+
+```{r}
+risultati <- c()
+
+risultati[1] <-   mean(predTrain == p1$id)
+pred2 <- predict(rf, p2, type = "class")
+risultati[2] <- mean(pred2 == p2$id)
+pred3 <- predict(rf, p3, type = "class")
+risultati[3] <- mean(pred3 == p3$id)
+pred4 <- predict(rf, p4, type = "class")
+risultati[4] <- mean(pred4 == p4$id)
+pred5 <- predict(rf, p5, type = "class")
+risultati[5] <- mean(pred5 == p5$id)
+pred6 <- predict(rf, p6, type = "class")
+risultati[6] <- mean(pred6 == p6$id)
+pred7 <- predict(rf, p7, type = "class")
+risultati[7] <- mean(pred7 == p7$id)
+pred8 <- predict(rf, p8, type = "class")
+risultati[8] <- mean(pred8 == p8$id)
+
+risultati
+mean(risultati[2:8])
+```
+
+We obteined lower result (mean 0.68), let's try to use 3 people
+
+```{r}
+total <- rbind(p1, p2,p5)
+```
+
+```{r}
+rf <- randomForest(total$id ~ ., data = total, ntree=50)
+predTrain <- predict(rf, total, type = "class")
+```
+
+```{r}
+risultati <- c()
+
+risultati[1] <-   mean(predTrain == p1$id)
+pred2 <- predict(rf, p2, type = "class")
+risultati[2] <- mean(pred2 == p2$id)
+pred3 <- predict(rf, p3, type = "class")
+risultati[3] <- mean(pred3 == p3$id)
+pred4 <- predict(rf, p4, type = "class")
+risultati[4] <- mean(pred4 == p4$id)
+pred5 <- predict(rf, p5, type = "class")
+risultati[5] <- mean(pred5 == p5$id)
+pred6 <- predict(rf, p6, type = "class")
+risultati[6] <- mean(pred6 == p6$id)
+pred7 <- predict(rf, p7, type = "class")
+risultati[7] <- mean(pred7 == p7$id)
+pred8 <- predict(rf, p8, type = "class")
+risultati[8] <- mean(pred8 == p8$id)
+
+risultati
+mean(c(risultati[3],risultati[4],risultati[6],risultati[7],risultati[8]))
+```
+
+With a result of 0.86 we obtained a similar value as before... but with one person less
+
+```{r}
+total <- rbind(p1, p2,p5,p3)
+```
+
+```{r}
+rf <- randomForest(total$id ~ ., data = total, ntree=50)
+predTrain <- predict(rf, total, type = "class")
+```
+
+```{r}
+risultati <- c()
+
+risultati[1] <-   mean(predTrain == p1$id)
+pred2 <- predict(rf, p2, type = "class")
+risultati[2] <- mean(pred2 == p2$id)
+pred3 <- predict(rf, p3, type = "class")
+risultati[3] <- mean(pred3 == p3$id)
+pred4 <- predict(rf, p4, type = "class")
+risultati[4] <- mean(pred4 == p4$id)
+pred5 <- predict(rf, p5, type = "class")
+risultati[5] <- mean(pred5 == p5$id)
+pred6 <- predict(rf, p6, type = "class")
+risultati[6] <- mean(pred6 == p6$id)
+pred7 <- predict(rf, p7, type = "class")
+risultati[7] <- mean(pred7 == p7$id)
+pred8 <- predict(rf, p8, type = "class")
+risultati[8] <- mean(pred8 == p8$id)
+
+risultati
+mean(c(risultati[4],risultati[6],risultati[7],risultati[8]))
+```
+
+Adding a fourth person (p3) we get an unsatisfactory 82%, it was better before but it seems again possible to use only 6 variables instead of 45 to obtain valid results
+
+
+
+### Appendix
+
+Code to create the full dataset
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=TRUE}
+x <- "id"
+{
+{
+file.paths_walking <- sprintf ('D:/Documenti/Inviare/a09/p1/s%i.txt', 01:60)
+walking <- data.frame()
+for (j in 1:length(file.paths_walking)){
+  s<-read_csv(file.paths_walking[j], col_names = FALSE)
+  s <- data.frame(s)
+  walking <- rbind(walking,s)
+}
+walking$id="walking"
+walking <- walking[c(x, setdiff(names(walking), x))]
+}
+{
+file.paths_stepper <- sprintf ('D:/Documenti/Inviare/a13/p1/s%i.txt', 01:60)
+stepper <- data.frame()
+for (j in 1:length(file.paths_stepper)){
+  s<-read_csv(file.paths_stepper[j], col_names = FALSE)
+  s <- data.frame(s)
+  stepper <- rbind(stepper,s)
+  }
+stepper$id="stepper"
+stepper <- stepper[c(x, setdiff(names(stepper), x))]
+}
+{
+file.paths_crosstr <- sprintf ('D:/Documenti/Inviare/a14/p1/s%i.txt', 01:60)
+crosstr <- data.frame()
+for (j in 1:length(file.paths_crosstr)){
+  s<-read_csv(file.paths_crosstr[j], col_names = FALSE)
+  s <- data.frame(s)
+  crosstr <- rbind(crosstr,s)
+}
+crosstr$id="crosstr"
+crosstr <- crosstr[c(x, setdiff(names(crosstr), x))]
+}
+{
+file.paths_jumping <- sprintf ('D:/Documenti/Inviare/a18/p1/s%i.txt', 01:60)
+jumping <- data.frame()
+for (j in 1:length(file.paths_jumping)){
+  s<-read_csv(file.paths_jumping[j], col_names = FALSE)
+  s <- data.frame(s)
+  jumping <- rbind(jumping,s)
+}
+jumping$id="jumping"
+jumping <- jumping[c(x, setdiff(names(jumping), x))]
+}
+
+p1 <- rbind(walking,stepper,crosstr,jumping)
+colnames(p1) <- c("id",
+  "T_xacc", "T_yacc", "T_zacc", "T_xgyro", "T_ygyro", "T_zgyro","T_xmag","T_ymag", "T_zmag",
+  "RA_xacc", "RA_yacc", "RA_zacc", "RA_xgyro", "RA_ygyro", "RA_zgyro","RA_xmag","RA_ymag", "RA_zmag",
+  "LA_xacc", "LA_yacc", "LA_zacc", "LA_xgyro", "LA_ygyro", "LA_zgyro","LA_xmag","LA_ymag", "LA_zmag",
+  "RL_xacc", "RL_yacc", "RL_zacc", "RL_xgyro", "RL_ygyro", "RL_zgyro","RL_xmag","RL_ymag", "RL_zmag",
+  "LL_xacc", "LL_yacc", "LL_zacc", "LL_xgyro", "LL_ygyro", "LL_zgyro","LL_xmag","LL_ymag", "LL_zmag"
+)
+save(p1,file="p1.Rda")
+}
+
+############# dataset persona2 #####################################
+{
+  {
+    file.paths_walking <- sprintf ('D:/Documenti/Inviare/a09/p2/s%i.txt', 01:60)
+    walking <- data.frame()
+    for (j in 1:length(file.paths_walking)){
+      s<-read_csv(file.paths_walking[j], col_names = FALSE)
+      s <- data.frame(s)
+      walking <- rbind(walking,s)
+    }
+    walking$id="walking"
+    walking <- walking[c(x, setdiff(names(walking), x))]
+  }
+  {
+    file.paths_stepper <- sprintf ('D:/Documenti/Inviare/a13/p2/s%i.txt', 01:60)
+    stepper <- data.frame()
+    for (j in 1:length(file.paths_stepper)){
+      s<-read_csv(file.paths_stepper[j], col_names = FALSE)
+      s <- data.frame(s)
+      stepper <- rbind(stepper,s)
+    }
+    stepper$id="stepper"
+    stepper <- stepper[c(x, setdiff(names(stepper), x))]
+  }
+  {
+    file.paths_crosstr <- sprintf ('D:/Documenti/Inviare/a14/p2/s%i.txt', 01:60)
+    crosstr <- data.frame()
+    for (j in 1:length(file.paths_crosstr)){
+      s<-read_csv(file.paths_crosstr[j], col_names = FALSE)
+      s <- data.frame(s)
+      crosstr <- rbind(crosstr,s)
+    }
+    crosstr$id="crosstr"
+    crosstr <- crosstr[c(x, setdiff(names(crosstr), x))]
+  }
+  {
+    file.paths_jumping <- sprintf ('D:/Documenti/Inviare/a18/p2/s%i.txt', 01:60)
+    jumping <- data.frame()
+    for (j in 1:length(file.paths_jumping)){
+      s<-read_csv(file.paths_jumping[j], col_names = FALSE)
+      s <- data.frame(s)
+      jumping <- rbind(jumping,s)
+    }
+    jumping$id="jumping"
+    jumping <- jumping[c(x, setdiff(names(jumping), x))]
+  }
+
+  p2 <- rbind(walking,stepper,crosstr,jumping)
+  colnames(p2) <- c("id",
+                    "T_xacc", "T_yacc", "T_zacc", "T_xgyro", "T_ygyro", "T_zgyro","T_xmag","T_ymag", "T_zmag",
+                    "RA_xacc", "RA_yacc", "RA_zacc", "RA_xgyro", "RA_ygyro", "RA_zgyro","RA_xmag","RA_ymag", "RA_zmag",
+                    "LA_xacc", "LA_yacc", "LA_zacc", "LA_xgyro", "LA_ygyro", "LA_zgyro","LA_xmag","LA_ymag", "LA_zmag",
+                    "RL_xacc", "RL_yacc", "RL_zacc", "RL_xgyro", "RL_ygyro", "RL_zgyro","RL_xmag","RL_ymag", "RL_zmag",
+                    "LL_xacc", "LL_yacc", "LL_zacc", "LL_xgyro", "LL_ygyro", "LL_zgyro","LL_xmag","LL_ymag", "LL_zmag"
+  )
+  save(p2,file="p2.Rda")
+}
+
+############# dataset persona3 #####################################
+{
+  {
+    file.paths_walking <- sprintf ('D:/Documenti/Inviare/a09/p3/s%i.txt', 01:60)
+    walking <- data.frame()
+    for (j in 1:length(file.paths_walking)){
+      s<-read_csv(file.paths_walking[j], col_names = FALSE)
+      s <- data.frame(s)
+      walking <- rbind(walking,s)
+    }
+    walking$id="walking"
+    walking <- walking[c(x, setdiff(names(walking), x))]
+  }
+  {
+    file.paths_stepper <- sprintf ('D:/Documenti/Inviare/a13/p3/s%i.txt', 01:60)
+    stepper <- data.frame()
+    for (j in 1:length(file.paths_stepper)){
+      s<-read_csv(file.paths_stepper[j], col_names = FALSE)
+      s <- data.frame(s)
+      stepper <- rbind(stepper,s)
+    }
+    stepper$id="stepper"
+    stepper <- stepper[c(x, setdiff(names(stepper), x))]
+  }
+  {
+    file.paths_crosstr <- sprintf ('D:/Documenti/Inviare/a14/p3/s%i.txt', 01:60)
+    crosstr <- data.frame()
+    for (j in 1:length(file.paths_crosstr)){
+      s<-read_csv(file.paths_crosstr[j], col_names = FALSE)
+      s <- data.frame(s)
+      crosstr <- rbind(crosstr,s)
+    }
+    crosstr$id="crosstr"
+    crosstr <- crosstr[c(x, setdiff(names(crosstr), x))]
+  }
+  {
+    file.paths_jumping <- sprintf ('D:/Documenti/Inviare/a18/p3/s%i.txt', 01:60)
+    jumping <- data.frame()
+    for (j in 1:length(file.paths_jumping)){
+      s<-read_csv(file.paths_jumping[j], col_names = FALSE)
+      s <- data.frame(s)
+      jumping <- rbind(jumping,s)
+    }
+    jumping$id="jumping"
+    jumping <- jumping[c(x, setdiff(names(jumping), x))]
+  }
+
+  p3 <- rbind(walking,stepper,crosstr,jumping)
+  colnames(p3) <- c("id",
+                    "T_xacc", "T_yacc", "T_zacc", "T_xgyro", "T_ygyro", "T_zgyro","T_xmag","T_ymag", "T_zmag",
+                    "RA_xacc", "RA_yacc", "RA_zacc", "RA_xgyro", "RA_ygyro", "RA_zgyro","RA_xmag","RA_ymag", "RA_zmag",
+                    "LA_xacc", "LA_yacc", "LA_zacc", "LA_xgyro", "LA_ygyro", "LA_zgyro","LA_xmag","LA_ymag", "LA_zmag",
+                    "RL_xacc", "RL_yacc", "RL_zacc", "RL_xgyro", "RL_ygyro", "RL_zgyro","RL_xmag","RL_ymag", "RL_zmag",
+                    "LL_xacc", "LL_yacc", "LL_zacc", "LL_xgyro", "LL_ygyro", "LL_zgyro","LL_xmag","LL_ymag", "LL_zmag"
+  )
+  save(p3,file="p3.Rda")
+}
+############# dataset persona4 #####################################
+{
+  {
+    file.paths_walking <- sprintf ('D:/Documenti/Inviare/a09/p4/s%i.txt', 01:60)
+    walking <- data.frame()
+    for (j in 1:length(file.paths_walking)){
+      s<-read_csv(file.paths_walking[j], col_names = FALSE)
+      s <- data.frame(s)
+      walking <- rbind(walking,s)
+    }
+    walking$id="walking"
+    walking <- walking[c(x, setdiff(names(walking), x))]
+  }
+  {
+    file.paths_stepper <- sprintf ('D:/Documenti/Inviare/a13/p4/s%i.txt', 01:60)
+    stepper <- data.frame()
+    for (j in 1:length(file.paths_stepper)){
+      s<-read_csv(file.paths_stepper[j], col_names = FALSE)
+      s <- data.frame(s)
+      stepper <- rbind(stepper,s)
+    }
+    stepper$id="stepper"
+    stepper <- stepper[c(x, setdiff(names(stepper), x))]
+  }
+  {
+    file.paths_crosstr <- sprintf ('D:/Documenti/Inviare/a14/p4/s%i.txt', 01:60)
+    crosstr <- data.frame()
+    for (j in 1:length(file.paths_crosstr)){
+      s<-read_csv(file.paths_crosstr[j], col_names = FALSE)
+      s <- data.frame(s)
+      crosstr <- rbind(crosstr,s)
+    }
+    crosstr$id="crosstr"
+    crosstr <- crosstr[c(x, setdiff(names(crosstr), x))]
+  }
+  {
+    file.paths_jumping <- sprintf ('D:/Documenti/Inviare/a18/p4/s%i.txt', 01:60)
+    jumping <- data.frame()
+    for (j in 1:length(file.paths_jumping)){
+      s<-read_csv(file.paths_jumping[j], col_names = FALSE)
+      s <- data.frame(s)
+      jumping <- rbind(jumping,s)
+    }
+    jumping$id="jumping"
+    jumping <- jumping[c(x, setdiff(names(jumping), x))]
+  }
+
+  p4 <- rbind(walking,stepper,crosstr,jumping)
+  colnames(p4) <- c("id",
+                    "T_xacc", "T_yacc", "T_zacc", "T_xgyro", "T_ygyro", "T_zgyro","T_xmag","T_ymag", "T_zmag",
+                    "RA_xacc", "RA_yacc", "RA_zacc", "RA_xgyro", "RA_ygyro", "RA_zgyro","RA_xmag","RA_ymag", "RA_zmag",
+                    "LA_xacc", "LA_yacc", "LA_zacc", "LA_xgyro", "LA_ygyro", "LA_zgyro","LA_xmag","LA_ymag", "LA_zmag",
+                    "RL_xacc", "RL_yacc", "RL_zacc", "RL_xgyro", "RL_ygyro", "RL_zgyro","RL_xmag","RL_ymag", "RL_zmag",
+                    "LL_xacc", "LL_yacc", "LL_zacc", "LL_xgyro", "LL_ygyro", "LL_zgyro","LL_xmag","LL_ymag", "LL_zmag"
+  )
+  save(p4,file="p4.Rda")
+}
+############# dataset persona5 #####################################
+{
+  {
+    file.paths_walking <- sprintf ('D:/Documenti/Inviare/a09/p5/s%i.txt', 01:60)
+    walking <- data.frame()
+    for (j in 1:length(file.paths_walking)){
+      s<-read_csv(file.paths_walking[j], col_names = FALSE)
+      s <- data.frame(s)
+      walking <- rbind(walking,s)
+    }
+    walking$id="walking"
+    walking <- walking[c(x, setdiff(names(walking), x))]
+  }
+  {
+    file.paths_stepper <- sprintf ('D:/Documenti/Inviare/a13/p5/s%i.txt', 01:60)
+    stepper <- data.frame()
+    for (j in 1:length(file.paths_stepper)){
+      s<-read_csv(file.paths_stepper[j], col_names = FALSE)
+      s <- data.frame(s)
+      stepper <- rbind(stepper,s)
+    }
+    stepper$id="stepper"
+    stepper <- stepper[c(x, setdiff(names(stepper), x))]
+  }
+  {
+    file.paths_crosstr <- sprintf ('D:/Documenti/Inviare/a14/p5/s%i.txt', 01:60)
+    crosstr <- data.frame()
+    for (j in 1:length(file.paths_crosstr)){
+      s<-read_csv(file.paths_crosstr[j], col_names = FALSE)
+      s <- data.frame(s)
+      crosstr <- rbind(crosstr,s)
+    }
+    crosstr$id="crosstr"
+    crosstr <- crosstr[c(x, setdiff(names(crosstr), x))]
+  }
+  {
+    file.paths_jumping <- sprintf ('D:/Documenti/Inviare/a18/p5/s%i.txt', 01:60)
+    jumping <- data.frame()
+    for (j in 1:length(file.paths_jumping)){
+      s<-read_csv(file.paths_jumping[j], col_names = FALSE)
+      s <- data.frame(s)
+      jumping <- rbind(jumping,s)
+    }
+    jumping$id="jumping"
+    jumping <- jumping[c(x, setdiff(names(jumping), x))]
+  }
+
+  p5 <- rbind(walking,stepper,crosstr,jumping)
+  colnames(p5) <- c("id",
+                    "T_xacc", "T_yacc", "T_zacc", "T_xgyro", "T_ygyro", "T_zgyro","T_xmag","T_ymag", "T_zmag",
+                    "RA_xacc", "RA_yacc", "RA_zacc", "RA_xgyro", "RA_ygyro", "RA_zgyro","RA_xmag","RA_ymag", "RA_zmag",
+                    "LA_xacc", "LA_yacc", "LA_zacc", "LA_xgyro", "LA_ygyro", "LA_zgyro","LA_xmag","LA_ymag", "LA_zmag",
+                    "RL_xacc", "RL_yacc", "RL_zacc", "RL_xgyro", "RL_ygyro", "RL_zgyro","RL_xmag","RL_ymag", "RL_zmag",
+                    "LL_xacc", "LL_yacc", "LL_zacc", "LL_xgyro", "LL_ygyro", "LL_zgyro","LL_xmag","LL_ymag", "LL_zmag"
+  )
+  save(p5,file="p5.Rda")
+}
+############# dataset persona7 #####################################
+{
+  {
+    file.paths_walking <- sprintf ('D:/Documenti/Inviare/a09/p6/s%i.txt', 01:60)
+    walking <- data.frame()
+    for (j in 1:length(file.paths_walking)){
+      s<-read_csv(file.paths_walking[j], col_names = FALSE)
+      s <- data.frame(s)
+      walking <- rbind(walking,s)
+    }
+    walking$id="walking"
+    walking <- walking[c(x, setdiff(names(walking), x))]
+  }
+  {
+    file.paths_stepper <- sprintf ('D:/Documenti/Inviare/a13/p6/s%i.txt', 01:60)
+    stepper <- data.frame()
+    for (j in 1:length(file.paths_stepper)){
+      s<-read_csv(file.paths_stepper[j], col_names = FALSE)
+      s <- data.frame(s)
+      stepper <- rbind(stepper,s)
+    }
+    stepper$id="stepper"
+    stepper <- stepper[c(x, setdiff(names(stepper), x))]
+  }
+  {
+    file.paths_crosstr <- sprintf ('D:/Documenti/Inviare/a14/p6/s%i.txt', 01:60)
+    crosstr <- data.frame()
+    for (j in 1:length(file.paths_crosstr)){
+      s<-read_csv(file.paths_crosstr[j], col_names = FALSE)
+      s <- data.frame(s)
+      crosstr <- rbind(crosstr,s)
+    }
+    crosstr$id="crosstr"
+    crosstr <- crosstr[c(x, setdiff(names(crosstr), x))]
+  }
+  {
+    file.paths_jumping <- sprintf ('D:/Documenti/Inviare/a18/p6/s%i.txt', 01:60)
+    jumping <- data.frame()
+    for (j in 1:length(file.paths_jumping)){
+      s<-read_csv(file.paths_jumping[j], col_names = FALSE)
+      s <- data.frame(s)
+      jumping <- rbind(jumping,s)
+    }
+    jumping$id="jumping"
+    jumping <- jumping[c(x, setdiff(names(jumping), x))]
+  }
+
+  p6 <- rbind(walking,stepper,crosstr,jumping)
+  colnames(p6) <- c("id",
+                    "T_xacc", "T_yacc", "T_zacc", "T_xgyro", "T_ygyro", "T_zgyro","T_xmag","T_ymag", "T_zmag",
+                    "RA_xacc", "RA_yacc", "RA_zacc", "RA_xgyro", "RA_ygyro", "RA_zgyro","RA_xmag","RA_ymag", "RA_zmag",
+                    "LA_xacc", "LA_yacc", "LA_zacc", "LA_xgyro", "LA_ygyro", "LA_zgyro","LA_xmag","LA_ymag", "LA_zmag",
+                    "RL_xacc", "RL_yacc", "RL_zacc", "RL_xgyro", "RL_ygyro", "RL_zgyro","RL_xmag","RL_ymag", "RL_zmag",
+                    "LL_xacc", "LL_yacc", "LL_zacc", "LL_xgyro", "LL_ygyro", "LL_zgyro","LL_xmag","LL_ymag", "LL_zmag"
+  )
+  save(p6,file="p6.Rda")
+}
+############# dataset persona7 #####################################
+{
+  {
+    file.paths_walking <- sprintf ('D:/Documenti/Inviare/a09/p7/s%i.txt', 01:60)
+    walking <- data.frame()
+    for (j in 1:length(file.paths_walking)){
+      s<-read_csv(file.paths_walking[j], col_names = FALSE)
+      s <- data.frame(s)
+      walking <- rbind(walking,s)
+    }
+    walking$id="walking"
+    walking <- walking[c(x, setdiff(names(walking), x))]
+  }
+  {
+    file.paths_stepper <- sprintf ('D:/Documenti/Inviare/a13/p7/s%i.txt', 01:60)
+    stepper <- data.frame()
+    for (j in 1:length(file.paths_stepper)){
+      s<-read_csv(file.paths_stepper[j], col_names = FALSE)
+      s <- data.frame(s)
+      stepper <- rbind(stepper,s)
+    }
+    stepper$id="stepper"
+    stepper <- stepper[c(x, setdiff(names(stepper), x))]
+  }
+  {
+    file.paths_crosstr <- sprintf ('D:/Documenti/Inviare/a14/p7/s%i.txt', 01:60)
+    crosstr <- data.frame()
+    for (j in 1:length(file.paths_crosstr)){
+      s<-read_csv(file.paths_crosstr[j], col_names = FALSE)
+      s <- data.frame(s)
+      crosstr <- rbind(crosstr,s)
+    }
+    crosstr$id="crosstr"
+    stepper <- stepper[c(x, setdiff(names(stepper), x))]
+  }
+  {
+    file.paths_jumping <- sprintf ('D:/Documenti/Inviare/a18/p7/s%i.txt', 01:60)
+    jumping <- data.frame()
+    for (j in 1:length(file.paths_jumping)){
+      s<-read_csv(file.paths_jumping[j], col_names = FALSE)
+      s <- data.frame(s)
+      jumping <- rbind(jumping,s)
+    }
+    jumping$id="jumping"
+    jumping <- jumping[c(x, setdiff(names(jumping), x))]
+  }
+
+  p7 <- rbind(walking,stepper,crosstr,jumping)
+  colnames(p7) <- c("id",
+                    "T_xacc", "T_yacc", "T_zacc", "T_xgyro", "T_ygyro", "T_zgyro","T_xmag","T_ymag", "T_zmag",
+                    "RA_xacc", "RA_yacc", "RA_zacc", "RA_xgyro", "RA_ygyro", "RA_zgyro","RA_xmag","RA_ymag", "RA_zmag",
+                    "LA_xacc", "LA_yacc", "LA_zacc", "LA_xgyro", "LA_ygyro", "LA_zgyro","LA_xmag","LA_ymag", "LA_zmag",
+                    "RL_xacc", "RL_yacc", "RL_zacc", "RL_xgyro", "RL_ygyro", "RL_zgyro","RL_xmag","RL_ymag", "RL_zmag",
+                    "LL_xacc", "LL_yacc", "LL_zacc", "LL_xgyro", "LL_ygyro", "LL_zgyro","LL_xmag","LL_ymag", "LL_zmag"
+  )
+  save(p7,file="p7.Rda")
+}
+############# dataset persona8 #####################################
+{
+  {
+    file.paths_walking <- sprintf ('D:/Documenti/Inviare/a09/p8/s%i.txt', 01:60)
+    walking <- data.frame()
+    for (j in 1:length(file.paths_walking)){
+      s<-read_csv(file.paths_walking[j], col_names = FALSE)
+      s <- data.frame(s)
+      walking <- rbind(walking,s)
+    }
+    walking$id="walking"
+    walking <- walking[c(x, setdiff(names(walking), x))]
+  }
+  {
+    file.paths_stepper <- sprintf ('D:/Documenti/Inviare/a13/p8/s%i.txt', 01:60)
+    stepper <- data.frame()
+    for (j in 1:length(file.paths_stepper)){
+      s<-read_csv(file.paths_stepper[j], col_names = FALSE)
+      s <- data.frame(s)
+      stepper <- rbind(stepper,s)
+    }
+    stepper$id="stepper"
+    stepper <- stepper[c(x, setdiff(names(stepper), x))]
+  }
+  {
+    file.paths_crosstr <- sprintf ('D:/Documenti/Inviare/a14/p8/s%i.txt', 01:60)
+    crosstr <- data.frame()
+    for (j in 1:length(file.paths_crosstr)){
+      s<-read_csv(file.paths_crosstr[j], col_names = FALSE)
+      s <- data.frame(s)
+      crosstr <- rbind(crosstr,s)
+    }
+    crosstr$id="crosstr"
+    crosstr <- crosstr[c(x, setdiff(names(crosstr), x))]
+  }
+  {
+    file.paths_jumping <- sprintf ('D:/Documenti/Inviare/a18/p8/s%i.txt', 01:60)
+    jumping <- data.frame()
+    for (j in 1:length(file.paths_jumping)){
+      s<-read_csv(file.paths_jumping[j], col_names = FALSE)
+      s <- data.frame(s)
+      jumping <- rbind(jumping,s)
+    }
+    jumping$id="jumping"
+    jumping <- jumping[c(x, setdiff(names(jumping), x))]
+  }
+
+  p8 <- rbind(walking,stepper,crosstr,jumping)
+  colnames(p8) <- c("id",
+                    "T_xacc", "T_yacc", "T_zacc", "T_xgyro", "T_ygyro", "T_zgyro","T_xmag","T_ymag", "T_zmag",
+                    "RA_xacc", "RA_yacc", "RA_zacc", "RA_xgyro", "RA_ygyro", "RA_zgyro","RA_xmag","RA_ymag", "RA_zmag",
+                    "LA_xacc", "LA_yacc", "LA_zacc", "LA_xgyro", "LA_ygyro", "LA_zgyro","LA_xmag","LA_ymag", "LA_zmag",
+                    "RL_xacc", "RL_yacc", "RL_zacc", "RL_xgyro", "RL_ygyro", "RL_zgyro","RL_xmag","RL_ymag", "RL_zmag",
+                    "LL_xacc", "LL_yacc", "LL_zacc", "LL_xgyro", "LL_ygyro", "LL_zgyro","LL_xmag","LL_ymag", "LL_zmag"
+  )
+  save(p8,file="p8.Rda")
+}
+```
+
